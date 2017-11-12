@@ -1,5 +1,6 @@
 // List.cpp
 
+#include <ndkhelper.h>
 #include "StdAfx.h"
 
 #include "../../../Common/IntToString.h"
@@ -20,8 +21,11 @@
 #include "List.h"
 #include "OpenCallbackConsole.h"
 
+#include <string>
+
 using namespace NWindows;
 using namespace NCOM;
+using namespace std;
 
 extern CStdOutStream *g_StdStream;
 extern CStdOutStream *g_ErrStream;
@@ -1175,7 +1179,7 @@ HRESULT ListArchives(CCodecs *codecs,
  
     CReadArcItem item;
     UStringVector pathParts;
-    
+
     for (UInt32 i = 0; i < numItems; i++)
     {
       if (NConsoleClose::TestBreakSignal())
@@ -1292,4 +1296,348 @@ HRESULT ListArchives(CCodecs *codecs,
     return lastError;
   
   return S_OK;
+}
+
+
+
+
+
+
+HRESULT ListFiles(CCodecs *codecs,
+                     const CObjectVector<COpenType> &types,
+                     const CIntVector &excludedFormats,
+                     bool stdInMode,
+                     UStringVector &arcPaths, UStringVector &arcPathsFull,
+                     bool processAltStreams, bool showAltStreams,
+                     const NWildcard::CCensorNode &wildcardCensor,
+                     bool enableHeaders, bool techMode,
+                     #ifndef _NO_CRYPTO
+                     bool &passwordEnabled, UString &password,
+                     #endif
+                     #ifndef _SFX
+                     const CObjectVector<CProperty> *props,
+                     #endif
+                     UInt64 &numErrors,
+                     UInt64 &numWarnings,
+                     vector<ArchiveFileMetadata> &outFileList)
+{
+    bool allFilesAreAllowed = wildcardCensor.AreAllAllowed();
+
+    numErrors = 0;
+    numWarnings = 0;
+
+    CFieldPrinter fp;
+    if (!techMode)
+        fp.Init(kStandardFieldTable, ARRAY_SIZE(kStandardFieldTable));
+
+    CListStat2 stat2total;
+
+    CBoolArr skipArcs(arcPaths.Size());
+    unsigned arcIndex;
+    for (arcIndex = 0; arcIndex < arcPaths.Size(); arcIndex++)
+        skipArcs[arcIndex] = false;
+    UInt64 numVolumes = 0;
+    UInt64 numArcs = 0;
+    UInt64 totalArcSizes = 0;
+
+    HRESULT lastError = 0;
+
+    for (arcIndex = 0; arcIndex < arcPaths.Size(); arcIndex++)
+    {
+        if (skipArcs[arcIndex])
+            continue;
+        const UString &arcPath = arcPaths[arcIndex];
+        UInt64 arcPackSize = 0;
+
+        if (!stdInMode)
+        {
+            NFile::NFind::CFileInfo fi;
+            if (!fi.Find(us2fs(arcPath)))
+            {
+                DWORD errorCode = GetLastError();
+/* FIXME
+        if (errorCode == 0)
+          errorCode = ERROR_FILE_NOT_FOUND;
+*/
+                lastError = HRESULT_FROM_WIN32(lastError);;
+                g_StdOut.Flush();
+                *g_ErrStream << endl << kError << NError::MyFormatMessage(errorCode) <<
+                             endl << arcPath << endl << endl;
+                numErrors++;
+                continue;
+            }
+            if (fi.IsDir())
+            {
+                g_StdOut.Flush();
+                *g_ErrStream << endl << kError << arcPath << " is not a file" << endl << endl;
+                numErrors++;
+                continue;
+            }
+            arcPackSize = fi.Size;
+            totalArcSizes += arcPackSize;
+        }
+
+        CArchiveLink arcLink;
+
+        COpenCallbackConsole openCallback;
+        openCallback.Init(&g_StdOut, g_ErrStream, NULL);
+
+#ifndef _NO_CRYPTO
+
+        openCallback.PasswordIsDefined = passwordEnabled;
+        openCallback.Password = password;
+
+#endif
+
+        /*
+        CObjectVector<COptionalOpenProperties> optPropsVector;
+        COptionalOpenProperties &optProps = optPropsVector.AddNew();
+        optProps.Props = *props;
+        */
+
+        COpenOptions options;
+#ifndef _SFX
+        options.props = props;
+#endif
+        options.codecs = codecs;
+        options.types = &types;
+        options.excludedFormats = &excludedFormats;
+        options.stdInMode = stdInMode;
+        options.stream = NULL;
+        options.filePath = arcPath;
+
+        if (enableHeaders)
+        {
+            g_StdOut << endl << kListing << arcPath << endl << endl;
+        }
+
+        HRESULT result = arcLink.Open3(options, &openCallback);
+
+        if (result != S_OK)
+        {
+            if (result == E_ABORT)
+                return result;
+            g_StdOut.Flush();
+            *g_ErrStream << endl << kError << arcPath << " : ";
+            if (result == S_FALSE)
+            {
+                Print_OpenArchive_Error(*g_ErrStream, codecs, arcLink);
+            }
+            else
+            {
+                lastError = result;
+                *g_ErrStream << "opening : ";
+                if (result == E_OUTOFMEMORY)
+                    *g_ErrStream << "Can't allocate required memory";
+                else
+                    *g_ErrStream << NError::MyFormatMessage(result);
+            }
+            *g_ErrStream << endl;
+            numErrors++;
+            continue;
+        }
+
+        {
+            if (arcLink.NonOpen_ErrorInfo.ErrorFormatIndex >= 0)
+                numErrors++;
+
+            FOR_VECTOR (r, arcLink.Arcs)
+            {
+                const CArcErrorInfo &arc = arcLink.Arcs[r].ErrorInfo;
+                if (!arc.WarningMessage.IsEmpty())
+                    numWarnings++;
+                if (arc.AreThereWarnings())
+                    numWarnings++;
+                if (arc.ErrorFormatIndex >= 0)
+                    numWarnings++;
+                if (arc.AreThereErrors())
+                {
+                    numErrors++;
+                    // break;
+                }
+                if (!arc.ErrorMessage.IsEmpty())
+                    numErrors++;
+            }
+        }
+
+        numArcs++;
+        numVolumes++;
+
+        if (!stdInMode)
+        {
+            numVolumes += arcLink.VolumePaths.Size();
+            totalArcSizes += arcLink.VolumesSize;
+            FOR_VECTOR (v, arcLink.VolumePaths)
+            {
+                int index = Find_FileName_InSortedVector(arcPathsFull, arcLink.VolumePaths[v]);
+                if (index >= 0 && (unsigned)index > arcIndex)
+                    skipArcs[(unsigned)index] = true;
+            }
+        }
+
+
+        if (enableHeaders)
+        {
+            RINOK(Print_OpenArchive_Props(g_StdOut, codecs, arcLink));
+
+            g_StdOut << endl;
+            if (techMode)
+                g_StdOut << "----------\n";
+        }
+
+        if (enableHeaders && !techMode)
+        {
+            fp.PrintTitle();
+            g_StdOut << endl;
+            fp.PrintTitleLines();
+            g_StdOut << endl;
+        }
+
+        const CArc &arc = arcLink.Arcs.Back();
+        fp.Arc = &arc;
+        fp.TechMode = techMode;
+        IInArchive *archive = arc.Archive;
+        if (techMode)
+        {
+            fp.Clear();
+            RINOK(fp.AddMainProps(archive));
+            if (arc.GetRawProps)
+            {
+                RINOK(fp.AddRawProps(arc.GetRawProps));
+            }
+        }
+
+        CListStat2 stat2;
+
+        UInt32 numItems;
+        RINOK(archive->GetNumberOfItems(&numItems));
+
+        CReadArcItem item;
+        UStringVector pathParts;
+
+        for (UInt32 i = 0; i < numItems; i++)
+        {
+            if (NConsoleClose::TestBreakSignal())
+                return E_ABORT;
+
+            HRESULT res = arc.GetItemPath2(i, fp.FilePath);
+
+            if (stdInMode && res == E_INVALIDARG)
+                break;
+            RINOK(res);
+
+            if (arc.Ask_Aux)
+            {
+                bool isAux;
+                RINOK(Archive_IsItem_Aux(archive, i, isAux));
+                if (isAux)
+                    continue;
+            }
+
+            bool isAltStream = false;
+            if (arc.Ask_AltStream)
+            {
+                RINOK(Archive_IsItem_AltStream(archive, i, isAltStream));
+                if (isAltStream && !processAltStreams)
+                    continue;
+            }
+
+            RINOK(Archive_IsItem_Dir(archive, i, fp.IsDir));
+
+            if (!allFilesAreAllowed)
+            {
+                if (isAltStream)
+                {
+                    RINOK(arc.GetItem(i, item));
+                    if (!CensorNode_CheckPath(wildcardCensor, item))
+                        continue;
+                }
+                else
+                {
+                    SplitPathToParts(fp.FilePath, pathParts);;
+                    bool include;
+                    if (!wildcardCensor.CheckPathVect(pathParts, !fp.IsDir, include))
+                        continue;
+                    if (!include)
+                        continue;
+                }
+            }
+
+            CListStat st;
+
+            RINOK(GetUInt64Value(archive, i, kpidSize, st.Size));
+            RINOK(GetUInt64Value(archive, i, kpidPackSize, st.PackSize));
+            RINOK(GetItemMTime(archive, i, st.MTime));
+
+            if (fp.IsDir)
+                stat2.NumDirs++;
+            else
+                st.NumFiles = 1;
+            stat2.GetStat(isAltStream).Update(st);
+
+            if (isAltStream && !showAltStreams)
+                continue;
+
+            ArchiveFileMetadata archivePageMetadata;
+            wchar_t* filePathBuffer = fp.FilePath.GetBuf(0);
+            wstring ws(filePathBuffer);
+            archivePageMetadata.path = string(ws.begin(), ws.end());
+            archivePageMetadata.fileSize = st.Size.Val;
+            outFileList.push_back(archivePageMetadata);
+            LOGI("In ListArchives(), filePath = %s, size = %d", archivePageMetadata.path.c_str(), archivePageMetadata.fileSize);
+
+            RINOK(fp.PrintItemInfo(i, st));
+        }
+
+        UInt64 numStreams = stat2.GetNumStreams();
+        if (!stdInMode
+            && !stat2.MainFiles.PackSize.Def
+            && !stat2.AltStreams.PackSize.Def)
+        {
+            if (arcLink.VolumePaths.Size() != 0)
+                arcPackSize += arcLink.VolumesSize;
+            stat2.MainFiles.PackSize.Add((numStreams == 0) ? 0 : arcPackSize);
+        }
+
+        stat2.MainFiles.SetSizeDefIfNoFiles();
+        stat2.AltStreams.SetSizeDefIfNoFiles();
+
+        if (enableHeaders && !techMode)
+        {
+            fp.PrintTitleLines();
+            g_StdOut << endl;
+            fp.PrintSum(stat2);
+        }
+
+        if (enableHeaders)
+        {
+            if (arcLink.NonOpen_ErrorInfo.ErrorFormatIndex >= 0)
+            {
+                g_StdOut << "----------\n";
+                PrintPropPair(g_StdOut, "Path", arcLink.NonOpen_ArcPath);
+                PrintArcTypeError(g_StdOut, codecs->Formats[arcLink.NonOpen_ErrorInfo.ErrorFormatIndex].Name, false);
+            }
+        }
+
+        stat2total.Update(stat2);
+
+        g_StdOut.Flush();
+    }
+
+    if (enableHeaders && !techMode && (arcPaths.Size() > 1 || numVolumes > 1))
+    {
+        g_StdOut << endl;
+        fp.PrintTitleLines();
+        g_StdOut << endl;
+        fp.PrintSum(stat2total);
+        g_StdOut << endl;
+        PrintPropNameAndNumber(g_StdOut, "Archives", numArcs);
+        PrintPropNameAndNumber(g_StdOut, "Volumes", numVolumes);
+        PrintPropNameAndNumber(g_StdOut, "Total archives size", totalArcSizes);
+    }
+
+    if (numErrors == 1 && lastError != 0)
+        return lastError;
+
+    return S_OK;
 }

@@ -10,6 +10,10 @@ public class Command {
         return String.format("7z x '%s' '-o%s' -aoa", archivePath, outPath);
     }
 
+    public static String getListCmd(String archivePath) {
+        return String.format("7z l '%s'", archivePath);
+    }
+
     public static String getCompressCmd(String filePath, String outPath, String type) {
         return String.format("7z a -t%s '%s' '%s'", type, outPath, filePath);
     }

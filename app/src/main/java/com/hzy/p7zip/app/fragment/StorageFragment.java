@@ -1,11 +1,14 @@
 package com.hzy.p7zip.app.fragment;
 
+import android.app.AlertDialog;
 import android.app.ProgressDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
@@ -14,8 +17,10 @@ import android.view.ViewGroup;
 import android.widget.Toast;
 
 import com.afollestad.materialdialogs.MaterialDialog;
+import com.hzy.libp7zip.ArchiveFileMetadata;
 import com.hzy.libp7zip.P7ZipApi;
 import com.hzy.p7zip.app.R;
+import com.hzy.p7zip.app.adapter.ArchiveListItemAdapter;
 import com.hzy.p7zip.app.adapter.FileItemAdapter;
 import com.hzy.p7zip.app.adapter.PathItemAdapter;
 import com.hzy.p7zip.app.bean.FileInfo;
@@ -25,6 +30,7 @@ import com.hzy.p7zip.app.utils.FileUtils;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import butterknife.Bind;
@@ -151,6 +157,9 @@ public class StorageFragment extends Fragment
                                     onExtractFile(info);
                                     break;
                                 case 2:
+                                    onListFile(info);
+                                    break;
+                                case 3:
                                     onRemoveFile(info);
                                     break;
                             }
@@ -169,6 +178,11 @@ public class StorageFragment extends Fragment
     private void onExtractFile(final FileInfo info) {
         String cmd = Command.getExtractCmd(info.getFilePath(), info.getFilePath() + "-ext");
         runCommand(cmd);
+    }
+
+    private void onListFile(final FileInfo info) {
+        String cmd = Command.getListCmd(info.getFilePath());
+        runListCommand(info, cmd);
     }
 
     private void onRemoveFile(final FileInfo info) {
@@ -226,6 +240,50 @@ public class StorageFragment extends Fragment
                         onRefresh();
                     }
                 });
+    }
+
+    private void runListCommand(final FileInfo fileInfo, final String cmd) {
+        showProgressDialog();
+        Observable.create(new ObservableOnSubscribe<ArchiveFileMetadata[]>() {
+            @Override
+            public void subscribe(ObservableEmitter<ArchiveFileMetadata[]> e) throws Exception {
+                ArchiveFileMetadata[] archiveFileMetadatas = P7ZipApi.executeListCommand(cmd);
+                e.onNext(archiveFileMetadatas);
+            }
+        }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<ArchiveFileMetadata[]>() {
+                    @Override
+                    public void accept(ArchiveFileMetadata[] archiveFileMetadatas) throws Exception {
+                        dismissProgressDialog();
+                        showArchiveListDialog(fileInfo, archiveFileMetadatas);
+                        onRefresh();
+                    }
+                });
+    }
+
+    private void showArchiveListDialog(FileInfo fileInfo, ArchiveFileMetadata[] archiveFileMetadatas) {
+        View archiveListView = LayoutInflater.from(getActivity()).inflate(R.layout.archive_list_view, null);
+        RecyclerView recyclerView = archiveListView.findViewById(R.id.recyclerView);
+        recyclerView.addItemDecoration(new DividerItemDecoration(getActivity(), DividerItemDecoration.VERTICAL));
+        ArchiveListItemAdapter adapter = new ArchiveListItemAdapter(Arrays.asList(archiveFileMetadatas));
+
+        recyclerView.setHasFixedSize(true);
+        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
+        recyclerView.setLayoutManager(layoutManager);
+
+        recyclerView.setAdapter(adapter);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+        AlertDialog alertDialog = builder.setTitle(getString(R.string.file_list_title, fileInfo.getFilePath()))
+                .setCancelable(true)
+                .setView(archiveListView)
+                .setPositiveButton("Close", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                    }
+                })
+                .create();
+        alertDialog.show();
     }
 
     private void showProgressDialog() {

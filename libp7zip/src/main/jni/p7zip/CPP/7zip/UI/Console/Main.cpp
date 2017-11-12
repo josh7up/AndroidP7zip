@@ -1,6 +1,9 @@
 // Main.cpp
 
+#include <ndkhelper.h>
 #include "StdAfx.h"
+#include <string>
+#include <iostream>
 
 #include "../../../Common/MyWindows.h"
 
@@ -58,9 +61,15 @@
 #include "../../MyVersion.h"
 #endif
 
+#include "p7zip/CPP/Common/ArchiveFileMetadata.h"
+
 using namespace NWindows;
 using namespace NFile;
 using namespace NCommandLineParser;
+using namespace std;
+
+#include <string>
+
 
 #ifdef _WIN32
 HINSTANCE g_hInstance = 0;
@@ -521,7 +530,7 @@ int Main2(
   CStdOutStream *percentsStream = NULL;
   if (options.Number_for_Percents != k_OutStream_disabled)
     percentsStream = (options.Number_for_Percents == k_OutStream_stderr) ? &g_StdErr : &g_StdOut;;
-  
+
   if (options.HelpMode)
   {
     ShowCopyrightAndHelp(g_StdStream, true);
@@ -1168,4 +1177,405 @@ int Main2(
   ThrowException_if_Error(hresultMain);
 
   return retCode;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+int executeListCommandInternal(
+#ifndef _WIN32
+        int numArgs,
+        char *args[],
+        vector<ArchiveFileMetadata> &outFileList
+#endif
+)
+{
+#if defined(_WIN32) && !defined(UNDER_CE)
+    SetFileApisToOEM();
+#endif
+
+    UStringVector commandStrings;
+
+#ifdef _WIN32
+    NCommandLineParser::SplitCommandLine(GetCommandLineW(), commandStrings);
+#else
+
+    mySplitCommandLine(numArgs, args, commandStrings);
+#endif
+
+    if (commandStrings.Size() == 1)
+    {
+        ShowCopyrightAndHelp(g_StdStream, true);
+        return 0;
+    }
+
+    commandStrings.Delete(0);
+
+    CArcCmdLineOptions options;
+
+    CArcCmdLineParser parser;
+
+    parser.Parse1(commandStrings, options);
+
+
+    if (options.Number_for_Out != k_OutStream_stdout)
+        g_StdStream = (options.Number_for_Out == k_OutStream_stderr ? &g_StdErr : NULL);
+
+    if (options.Number_for_Errors != k_OutStream_stderr)
+        g_ErrStream = (options.Number_for_Errors == k_OutStream_stdout ? &g_StdOut : NULL);
+
+    CStdOutStream *percentsStream = NULL;
+    if (options.Number_for_Percents != k_OutStream_disabled)
+        percentsStream = (options.Number_for_Percents == k_OutStream_stderr) ? &g_StdErr : &g_StdOut;;
+
+    if (options.HelpMode)
+    {
+        ShowCopyrightAndHelp(g_StdStream, true);
+        return 0;
+    }
+
+#if defined(_WIN32) && !defined(UNDER_CE)
+    NSecurity::EnablePrivilege_SymLink();
+#endif
+
+#ifdef _7ZIP_LARGE_PAGES
+    if (options.LargePages)
+  {
+    SetLargePageSize();
+    #if defined(_WIN32) && !defined(UNDER_CE)
+    NSecurity::EnablePrivilege_LockMemory();
+    #endif
+  }
+#endif
+
+    if (options.EnableHeaders)
+        ShowCopyrightAndHelp(g_StdStream, false);
+
+    parser.Parse2(options);
+
+    unsigned percentsNameLevel = 1;
+    if (options.LogLevel == 0 || options.Number_for_Percents != options.Number_for_Out)
+        percentsNameLevel = 2;
+
+    unsigned consoleWidth = 80; // FIXME
+
+    CREATE_CODECS_OBJECT
+
+    codecs->CaseSensitiveChange = options.CaseSensitiveChange;
+    codecs->CaseSensitive = options.CaseSensitive;
+    ThrowException_if_Error(codecs->Load());
+
+    bool isExtractGroupCommand = options.Command.IsFromExtractGroup();
+
+    if (codecs->Formats.Size() == 0 &&
+        (isExtractGroupCommand
+         || options.Command.CommandType == NCommandType::kList
+         || options.Command.IsFromUpdateGroup()))
+    {
+#ifdef EXTERNAL_CODECS
+        if (!codecs->MainDll_ErrorPath.IsEmpty())
+    {
+      UString s = L"Can't load module ";
+      s += fs2us(codecs->MainDll_ErrorPath);
+      throw s;
+    }
+#endif
+
+        throw kNoFormats;
+    }
+
+    CObjectVector<COpenType> types;
+    if (!ParseOpenTypes(*codecs, options.ArcType, types))
+        throw kUnsupportedArcTypeMessage;
+
+    CIntVector excludedFormats;
+    FOR_VECTOR (k, options.ExcludedArcTypes)
+    {
+        CIntVector tempIndices;
+        if (!codecs->FindFormatForArchiveType(options.ExcludedArcTypes[k], tempIndices)
+            || tempIndices.Size() != 1)
+            throw kUnsupportedArcTypeMessage;
+        excludedFormats.AddToUniqueSorted(tempIndices[0]);
+        // excludedFormats.Sort();
+    }
+
+
+#ifdef EXTERNAL_CODECS
+    if (isExtractGroupCommand
+      || options.Command.CommandType == NCommandType::kHash
+      || options.Command.CommandType == NCommandType::kBenchmark)
+    ThrowException_if_Error(__externalCodecs.Load());
+#endif
+
+    int retCode = NExitCode::kSuccess;
+    HRESULT hresultMain = S_OK;
+
+    if (isExtractGroupCommand || options.Command.CommandType == NCommandType::kList)
+    {
+        UStringVector ArchivePathsSorted;
+        UStringVector ArchivePathsFullSorted;
+
+        if (options.StdInMode)
+        {
+            ArchivePathsSorted.Add(options.ArcName_for_StdInMode);
+            ArchivePathsFullSorted.Add(options.ArcName_for_StdInMode);
+        }
+        else
+        {
+            CExtractScanConsole scan;
+
+            scan.Init(options.EnableHeaders ? g_StdStream : NULL, g_ErrStream, percentsStream);
+            scan.SetWindowWidth(consoleWidth);
+
+            if (g_StdStream && options.EnableHeaders)
+                *g_StdStream << "Scanning the drive for archives:" << endl;
+
+            CDirItemsStat st;
+
+            scan.StartScanning();
+
+            hresultMain = EnumerateDirItemsAndSort(
+                    options.arcCensor,
+                    NWildcard::k_RelatPath,
+                    UString(), // addPathPrefix
+                    ArchivePathsSorted,
+                    ArchivePathsFullSorted,
+                    st,
+                    &scan);
+
+            scan.CloseScanning();
+
+            if (hresultMain == S_OK)
+            {
+                if (options.EnableHeaders)
+                    scan.PrintStat(st);
+            }
+            else
+            {
+                /*
+                if (res != E_ABORT)
+                {
+                  throw CSystemException(res);
+                  // errorInfo.Message = "Scanning error";
+                }
+                return res;
+                */
+            }
+        }
+
+        if (hresultMain == S_OK)
+            if (isExtractGroupCommand)
+            {
+                CExtractCallbackConsole *ecs = new CExtractCallbackConsole;
+                CMyComPtr<IFolderArchiveExtractCallback> extractCallback = ecs;
+
+#ifndef _NO_CRYPTO
+                ecs->PasswordIsDefined = options.PasswordEnabled;
+                ecs->Password = options.Password;
+#endif
+
+                ecs->Init(g_StdStream, g_ErrStream, percentsStream);
+                ecs->MultiArcMode = (ArchivePathsSorted.Size() > 1);
+
+                ecs->LogLevel = options.LogLevel;
+                ecs->PercentsNameLevel = percentsNameLevel;
+
+                if (percentsStream)
+                    ecs->SetWindowWidth(consoleWidth);
+
+                /*
+                COpenCallbackConsole openCallback;
+                openCallback.Init(g_StdStream, g_ErrStream);
+
+                #ifndef _NO_CRYPTO
+                openCallback.PasswordIsDefined = options.PasswordEnabled;
+                openCallback.Password = options.Password;
+                #endif
+                */
+
+                CExtractOptions eo;
+                (CExtractOptionsBase &)eo = options.ExtractOptions;
+
+                eo.StdInMode = options.StdInMode;
+                eo.StdOutMode = options.StdOutMode;
+                eo.YesToAll = options.YesToAll;
+                eo.TestMode = options.Command.IsTestCommand();
+
+#ifndef _SFX
+                eo.Properties = options.Properties;
+#endif
+
+                UString errorMessage;
+                CDecompressStat stat;
+                CHashBundle hb;
+                IHashCalc *hashCalc = NULL;
+
+                if (!options.HashMethods.IsEmpty())
+                {
+                    hashCalc = &hb;
+                    ThrowException_if_Error(hb.SetMethods(EXTERNAL_CODECS_VARS_L options.HashMethods));
+                    hb.Init();
+                }
+
+                hresultMain = Extract(
+                        codecs,
+                        types,
+                        excludedFormats,
+                        ArchivePathsSorted,
+                        ArchivePathsFullSorted,
+                        options.Censor.Pairs.Front().Head,
+                        eo, ecs, ecs, hashCalc, errorMessage, stat);
+
+                ecs->ClosePercents();
+
+                if (!errorMessage.IsEmpty())
+                {
+                    if (g_ErrStream)
+                        *g_ErrStream << endl << "ERROR:" << endl << errorMessage << endl;
+                    if (hresultMain == S_OK)
+                        hresultMain = E_FAIL;
+                }
+
+                CStdOutStream *so = g_StdStream;
+
+                bool isError = false;
+
+                if (so)
+                {
+                    *so << endl;
+
+                    if (ecs->NumTryArcs > 1)
+                    {
+                        *so << "Archives: " << ecs->NumTryArcs << endl;
+                        *so << "OK archives: " << ecs->NumOkArcs << endl;
+                    }
+                }
+
+                if (ecs->NumCantOpenArcs != 0)
+                {
+                    isError = true;
+                    if (so)
+                        *so << "Can't open as archive: " << ecs->NumCantOpenArcs << endl;
+                }
+
+                if (ecs->NumArcsWithError != 0)
+                {
+                    isError = true;
+                    if (so)
+                        *so << "Archives with Errors: " << ecs->NumArcsWithError << endl;
+                }
+
+                if (so)
+                {
+                    if (ecs->NumArcsWithWarnings != 0)
+                        *so << "Archives with Warnings: " << ecs->NumArcsWithWarnings << endl;
+
+                    if (ecs->NumOpenArcWarnings != 0)
+                    {
+                        *so << endl;
+                        if (ecs->NumOpenArcWarnings != 0)
+                            *so << "Warnings: " << ecs->NumOpenArcWarnings << endl;
+                    }
+                }
+
+                if (ecs->NumOpenArcErrors != 0)
+                {
+                    isError = true;
+                    if (so)
+                    {
+                        *so << endl;
+                        if (ecs->NumOpenArcErrors != 0)
+                            *so << "Open Errors: " << ecs->NumOpenArcErrors << endl;
+                    }
+                }
+
+                if (isError)
+                    retCode = NExitCode::kFatalError;
+
+                if (so)
+                    if (ecs->NumArcsWithError != 0 || ecs->NumFileErrors != 0)
+                    {
+                        // if (ecs->NumArchives > 1)
+                        {
+                            *so << endl;
+                            if (ecs->NumFileErrors != 0)
+                                *so << "Sub items Errors: " << ecs->NumFileErrors << endl;
+                        }
+                    }
+                    else if (hresultMain == S_OK)
+                    {
+                        if (stat.NumFolders != 0)
+                            *so << "Folders: " << stat.NumFolders << endl;
+                        if (stat.NumFiles != 1 || stat.NumFolders != 0 || stat.NumAltStreams != 0)
+                            *so << "Files: " << stat.NumFiles << endl;
+                        if (stat.NumAltStreams != 0)
+                        {
+                            *so << "Alternate Streams: " << stat.NumAltStreams << endl;
+                            *so << "Alternate Streams Size: " << stat.AltStreams_UnpackSize << endl;
+                        }
+
+                        *so
+                                << "Size:       " << stat.UnpackSize << endl
+                                << "Compressed: " << stat.PackSize << endl;
+                        if (hashCalc)
+                        {
+                            *so << endl;
+                            PrintHashStat(*so, hb);
+                        }
+                    }
+            }
+            else
+            {
+                UInt64 numErrors = 0;
+                UInt64 numWarnings = 0;
+
+                hresultMain = ListFiles(
+                        codecs,
+                        types,
+                        excludedFormats,
+                        options.StdInMode,
+                        ArchivePathsSorted,
+                        ArchivePathsFullSorted,
+                        options.ExtractOptions.NtOptions.AltStreams.Val,
+                        options.AltStreams.Val, // we don't want to show AltStreams by default
+                        options.Censor.Pairs.Front().Head,
+                        options.EnableHeaders,
+                        options.TechMode,
+                        #ifndef _NO_CRYPTO
+                        options.PasswordEnabled,
+                        options.Password,
+                        #endif
+                        &options.Properties,
+                        numErrors, numWarnings,
+                        outFileList);
+
+                if (options.EnableHeaders)
+                    if (numWarnings > 0)
+                        g_StdOut << endl << "Warnings: " << numWarnings << endl;
+
+                if (numErrors > 0)
+                {
+                    if (options.EnableHeaders)
+                        g_StdOut << endl << "Errors: " << numErrors << endl;
+                    retCode = NExitCode::kFatalError;
+                }
+            }
+    }
+    else
+        ShowMessageAndThrowException(kUserErrorMessage, NExitCode::kUserError);
+
+    if (options.ShowTime && g_StdStream)
+        PrintStat();
+
+    ThrowException_if_Error(hresultMain);
+
+    return retCode;
 }

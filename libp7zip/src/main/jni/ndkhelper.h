@@ -30,6 +30,9 @@ JNIEXPORT jstring JNICALL
 JNIEXPORT jint JNICALL
         Java_com_hzy_libp7zip_P7ZipApi_executeCommand(JNIEnv *env, jclass type, jstring command_);
 
+JNIEXPORT jobjectArray JNICALL
+        Java_com_hzy_libp7zip_P7ZipApi_executeListCommand(JNIEnv *env, jclass type, jstring command_);
+
 #ifdef __cplusplus
 }
 #endif

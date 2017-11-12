@@ -3,6 +3,7 @@
     <array name="popup_menu_items">
         <item>Compress</item>
         <item>Extract</item>
+        <item>List</item>
         <item>Remove</item>
     </array>
 </resources>

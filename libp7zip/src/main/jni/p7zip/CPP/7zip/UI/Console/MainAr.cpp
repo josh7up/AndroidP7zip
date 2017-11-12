@@ -1,5 +1,6 @@
 // MainAr.cpp
 
+#include <ndkhelper.h>
 #include "StdAfx.h"
 
 #include "../../../Common/MyException.h"
@@ -12,8 +13,13 @@
 #include "../Common/ExitCode.h"
 
 #include "ConsoleClose.h"
+#include "../../../cmd/command.h"
+
+#include <vector>
+#include <string>
 
 using namespace NWindows;
+using namespace std;
 
 CStdOutStream *g_StdStream = NULL;
 CStdOutStream *g_ErrStream = NULL;
@@ -22,6 +28,14 @@ extern int Main2(
   #ifndef _WIN32
   int numArgs, char *args[]
   #endif
+);
+
+extern int executeListCommandInternal(
+    #ifndef _WIN32
+    int numArgs,
+    char *args[],
+    vector<ArchiveFileMetadata> &outFileList
+    #endif
 );
 
 static const char *kException_CmdLine_Error_Message = "Command Line Error:";
@@ -68,6 +82,126 @@ int MY_CDECL main
     numArgs, args
     #endif
     );
+  }
+  catch(const CNewException &)
+  {
+    PrintError(kMemoryExceptionMessage);
+    return (NExitCode::kMemoryError);
+  }
+  catch(const NConsoleClose::CCtrlBreakException &)
+  {
+    PrintError(kUserBreakMessage);
+    return (NExitCode::kUserBreak);
+  }
+  catch(const CArcCmdLineException &e)
+  {
+    PrintError(kException_CmdLine_Error_Message);
+    if (g_ErrStream)
+      *g_ErrStream << e << endl;
+    return (NExitCode::kUserError);
+  }
+  catch(const CSystemException &systemError)
+  {
+    if (systemError.ErrorCode == E_OUTOFMEMORY)
+    {
+      PrintError(kMemoryExceptionMessage);
+      return (NExitCode::kMemoryError);
+    }
+    if (systemError.ErrorCode == E_ABORT)
+    {
+      PrintError(kUserBreakMessage);
+      return (NExitCode::kUserBreak);
+    }
+    if (g_ErrStream)
+    {
+      PrintError("System ERROR:");
+      *g_ErrStream << NError::MyFormatMessage(systemError.ErrorCode) << endl;
+    }
+    return (NExitCode::kFatalError);
+  }
+  catch(NExitCode::EEnum &exitCode)
+  {
+    FlushStreams();
+    if (g_ErrStream)
+      *g_ErrStream << kInternalExceptionMessage << exitCode << endl;
+    return (exitCode);
+  }
+  catch(const UString &s)
+  {
+    if (g_ErrStream)
+    {
+      PrintError(kExceptionErrorMessage);
+      *g_ErrStream << s << endl;
+    }
+    return (NExitCode::kFatalError);
+  }
+  catch(const AString &s)
+  {
+    if (g_ErrStream)
+    {
+      PrintError(kExceptionErrorMessage);
+      *g_ErrStream << s << endl;
+    }
+    return (NExitCode::kFatalError);
+  }
+  catch(const char *s)
+  {
+    if (g_ErrStream)
+    {
+      PrintError(kExceptionErrorMessage);
+      *g_ErrStream << s << endl;
+    }
+    return (NExitCode::kFatalError);
+  }
+  catch(const wchar_t *s)
+  {
+    if (g_ErrStream)
+    {
+      PrintError(kExceptionErrorMessage);
+      *g_ErrStream << s << endl;
+    }
+    return (NExitCode::kFatalError);
+  }
+  catch(int t)
+  {
+    if (g_ErrStream)
+    {
+      FlushStreams();
+      *g_ErrStream << kInternalExceptionMessage << t << endl;
+      return (NExitCode::kFatalError);
+    }
+  }
+  catch(...)
+  {
+    PrintError(kUnknownExceptionMessage);
+    return (NExitCode::kFatalError);
+  }
+
+  return res;
+}
+
+
+
+int MY_CDECL executeListCommandMain
+(
+  #ifndef _WIN32
+  int numArgs,
+  char *args[],
+  vector<ArchiveFileMetadata> &outFileList
+  #endif
+)
+{
+  g_ErrStream = &g_StdErr;
+  g_StdStream = &g_StdOut;
+
+  NT_CHECK
+
+  NConsoleClose::CCtrlHandlerSetter ctrlHandlerSetter;
+  int res = 0;
+
+  try
+  {
+    res = executeListCommandInternal(numArgs, args, outFileList);
   }
   catch(const CNewException &)
   {
