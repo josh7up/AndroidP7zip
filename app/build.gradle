@@ -6,7 +6,7 @@ model {
         buildToolsVersion rootProject.ext.configuration.buildTools
         defaultConfig {
             applicationId "com.hzy.p7zip.app"
-            minSdkVersion.apiLevel 15
+            minSdkVersion.apiLevel 16
             targetSdkVersion.apiLevel rootProject.ext.configuration.targetSdk
             versionCode 1
             versionName "1.0"
