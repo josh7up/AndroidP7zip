@@ -33,7 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import butterknife.Bind;
+import butterknife.BindView;
 import butterknife.ButterKnife;
 import io.reactivex.Observable;
 import io.reactivex.ObservableEmitter;
@@ -57,13 +57,13 @@ import static com.hzy.p7zip.app.command.ExitCode.EXIT_WARNING;
 public class StorageFragment extends Fragment
         implements SwipeRefreshLayout.OnRefreshListener, View.OnClickListener, View.OnLongClickListener {
 
-    @Bind(R.id.fragment_storage_path)
+    @BindView(R.id.fragment_storage_path)
     RecyclerView mPathListView;
 
-    @Bind(R.id.fragment_storage_list)
+    @BindView(R.id.fragment_storage_list)
     RecyclerView mStorageListView;
 
-    @Bind(R.id.fragment_storage_refresh)
+    @BindView(R.id.fragment_storage_refresh)
     SwipeRefreshLayout mSwipRefresh;
 
     private List<FileInfo> mCurFileInfoList;
