@@ -62,7 +62,7 @@ apply from: 'https://raw.githubusercontent.com/Commit451/gradle-android-javadocs
 
 def myGroupId = 'com.github.josh7up'
 def myArtifactId = 'AndroidP7zip'
-def myVersionNumber = '1.0.0'
+def myVersionNumber = '1.0.1'
 def myUsername = 'josh7up'
 def myGitUrl = 'https://github.com/josh7up/AndroidP7zip'
 
