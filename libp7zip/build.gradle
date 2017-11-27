@@ -1,5 +1,4 @@
 apply plugin: 'com.android.library'
-apply plugin: 'com.jfrog.bintray'
 
 android {
     compileSdkVersion rootProject.ext.configuration.compileSdk
@@ -58,72 +57,35 @@ dependencies {
     implementation "com.android.support:appcompat-v7:${rootProject.ext.configuration.supportLibrary}"
 }
 
-apply from: 'https://raw.githubusercontent.com/Commit451/gradle-android-javadocs/1.0.0/gradle-android-javadocs.gradle'
+apply from: 'https://raw.githubusercontent.com/josh7up/AndroidMavenBintray/1.0.0/gradle-maven-bintray.gradle'
 
-def myGroupId = 'com.github.josh7up'
-def myArtifactId = 'AndroidP7zip'
-def myVersionNumber = '1.0.1'
-def myUsername = 'josh7up'
-def myGitUrl = 'https://github.com/josh7up/AndroidP7zip'
+def groupId = 'com.github.josh7up'
+def artifactId = 'AndroidP7zip'
+def versionNumber = '1.0.1'
+def gitUrl = 'https://github.com/josh7up/AndroidP7zip'
 
-group = myGroupId
-version = myVersionNumber
-// Important for ensuring this library project is not uploaded to bintray as a sub-project.
-archivesBaseName = myArtifactId
-
-install {
-    repositories.mavenInstaller {
-        pom.project {
-            name myArtifactId
-            description 'An Android compress and extract library, P7Zip port for Android.'
-            url myGitUrl
-            inceptionYear '2017'
-
-            packaging 'aar'
-            groupId myGroupId
-            artifactId myArtifactId
-            version myVersionNumber
-
-            licenses {
-                license {
-                    name 'GNU LESSER GENERAL PUBLIC LICENSE 2.1'
-                    url 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html'
-                    distribution 'repo'
-                }
-            }
-            scm {
-                connection "${myGitUrl}.git"
-                url myGitUrl
-
-            }
-            developers {
-                developer {
-                    id = myUsername
-                    name 'Josh'
-                }
-            }
-        }
-    }
-}
+configureMavenInstall([
+        groupId: groupId,
+        artifactId: artifactId,
+        versionNumber: versionNumber,
+        developerId: 'josh7up',
+        gitUrl: gitUrl,
+        projectDescription: 'An Android compress and extract library, P7Zip port for Android.',
+        projectInceptionYear: 2017,
+        licenseName: 'GNU LESSER GENERAL PUBLIC LICENSE 2.1',
+        licenseUrl: 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html',
+        developerName: 'Josh Feldman'
+])
 
 Properties bintrayProperties = new Properties()
 bintrayProperties.load(project.rootProject.file('bintray.properties').newDataInputStream())
 
-bintray {
-    user = bintrayProperties.getProperty('user')
-    key = bintrayProperties.get('key')
-    configurations = ['archives']
-    pkg {
-        repo = 'android'
-        name = myArtifactId
-        licenses = ['LGPL-2.1']
-        vcsUrl = "${myGitUrl}.git"
-        publish = true
-        version {
-            name = myVersionNumber
-            desc = "${myArtifactId} ${myVersionNumber}"
-            released = new Date()
-            vcsTag = myVersionNumber
-        }
-    }
-}
+configureBintrayUpload(
+        user: bintrayProperties.getProperty('user'),
+        key: bintrayProperties.get('key'),
+        repoName: 'android',
+        artifactId: artifactId,
+        licenseId: 'LGPL-2.1',
+        gitUrl: gitUrl,
+        versionNumber: versionNumber
+)
