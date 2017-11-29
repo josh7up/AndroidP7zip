@@ -57,7 +57,7 @@ dependencies {
     implementation "com.android.support:appcompat-v7:${rootProject.ext.configuration.supportLibrary}"
 }
 
-apply from: 'https://raw.githubusercontent.com/josh7up/AndroidMavenBintray/1.0.0/gradle-maven-bintray.gradle'
+apply from: 'https://raw.githubusercontent.com/josh7up/AndroidMavenBintray/1.0.1/gradle-maven-bintray.gradle'
 
 def groupId = 'com.github.josh7up'
 def artifactId = 'AndroidP7zip'
@@ -77,8 +77,11 @@ configureMavenInstall([
         developerName: 'Josh Feldman'
 ])
 
+File bintrayPropertiesFile = project.rootProject.file('bintray.properties')
 Properties bintrayProperties = new Properties()
-bintrayProperties.load(project.rootProject.file('bintray.properties').newDataInputStream())
+if (bintrayPropertiesFile.exists()) {
+    bintrayProperties.load(bintrayPropertiesFile.newDataInputStream())
+}
 
 configureBintrayUpload(
         user: bintrayProperties.getProperty('user'),
