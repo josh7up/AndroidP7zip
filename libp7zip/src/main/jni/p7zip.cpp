@@ -13,10 +13,10 @@ Java_com_hzy_libp7zip_P7ZipApi_get7zVersionInfo(JNIEnv *env, jclass type) {
 }
 
 JNIEXPORT jint JNICALL
-Java_com_hzy_libp7zip_P7ZipApi_executeCommand(JNIEnv *env, jclass type, jstring command_) {
+Java_com_hzy_libp7zip_P7ZipApi_executeGenericCommand(JNIEnv *env, jclass type, jstring command_) {
     const char *command = env->GetStringUTFChars(command_, 0);
     LOGI("CMD:[%s]", command);
-    int ret = executeCommand(command);
+    int ret = executeGenericCommand(command);
     env->ReleaseStringUTFChars(command_, command);
     return ret;
 }
@@ -37,8 +37,10 @@ Java_com_hzy_libp7zip_P7ZipApi_executeListCommand(JNIEnv *env, jclass type, jstr
         jstring pagePath = env->NewStringUTF(outFileList[i].path.c_str());
         jobject archiveFileMetaData = env->NewObject(archiveFileMetadataClass, archiveFileMetadataConstructor, pagePath, (jlong) outFileList[i].fileSize);
         env->SetObjectArrayElement(outArray, i, archiveFileMetaData);
-        // Need to clean up the pagePath jstring or else a "local reference table overflow (max=512)" error can be thrown.
+        // Need to clean up local objects created in this loop, or else a "local reference table overflow (max=512)" error can be thrown.
+        // Cleaning up these references will (surprisingly) not affect the data in the outArray.
         env->DeleteLocalRef(pagePath);
+        env->DeleteLocalRef(archiveFileMetaData);
     }
 
     env->ReleaseStringUTFChars(command_, command);

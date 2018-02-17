@@ -228,7 +228,7 @@ public class StorageFragment extends Fragment
         Observable.create(new ObservableOnSubscribe<Integer>() {
             @Override
             public void subscribe(ObservableEmitter<Integer> e) throws Exception {
-                int ret = P7ZipApi.executeCommand(cmd);
+                int ret = P7ZipApi.executeGenericCommand(cmd);
                 e.onNext(ret);
             }
         }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())

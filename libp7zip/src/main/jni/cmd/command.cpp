@@ -2,7 +2,7 @@
 #include <ndkhelper.h>
 #include "command.h"
 
-int executeCommand(const char* cmd) {
+int executeGenericCommand(const char* cmd) {
     int argc = 0;
     char temp[ARGC_MAX][ARGV_LEN_MAX];
     char *argv[ARGC_MAX];
@@ -13,7 +13,7 @@ int executeCommand(const char* cmd) {
         argv[i] = temp[i];
         LOGD("arg[%d]:[%s]", i, argv[i]);
     }
-    return main(argc, argv);
+    return executeGenericCommandMain(argc, argv);
 }
 
 int executeListCommand(const char* command, std::vector<ArchiveFileMetadata> &outFileList) {

@@ -13,7 +13,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                abiFilters 'x86', 'x86_64', 'armeabi', 'armeabi-v7a'
+                abiFilters 'x86', 'x86_64', 'armeabi', 'armeabi-v7a', 'arm64-v8a'
 
                 cFlags '-I' + file('src/main/jni/p7zip/CPP'),
                        '-I' + file('src/main/jni/p7zip/CPP/include_windows')
@@ -61,7 +61,7 @@ apply from: 'https://raw.githubusercontent.com/josh7up/AndroidMavenBintray/1.0.1
 
 def groupId = 'com.github.josh7up'
 def artifactId = 'AndroidP7zip'
-def versionNumber = '1.0.1'
+def versionNumber = '1.0.2'
 def gitUrl = 'https://github.com/josh7up/AndroidP7zip'
 
 configureMavenInstall([

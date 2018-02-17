@@ -11,13 +11,15 @@ extern "C" {
 
 #include <MyTypes.h>
 
-int MY_CDECL main(
+int executeGenericCommand(const char* cmd);
+
+int MY_CDECL executeGenericCommandMain(
 #ifndef _WIN32
         int numArgs, char *args[]
 #endif
 );
 
-int executeCommand(const char* cmd);
+int executeListCommand(const char* command, std::vector<ArchiveFileMetadata> &outFileList);
 
 int MY_CDECL executeListCommandMain(
 #ifndef _WIN32
@@ -26,8 +28,6 @@ int MY_CDECL executeListCommandMain(
         std::vector<ArchiveFileMetadata> &outFileList
 #endif
 );
-
-int executeListCommand(const char* command, std::vector<ArchiveFileMetadata> &outFileList);
 
 #ifdef __cplusplus
 }

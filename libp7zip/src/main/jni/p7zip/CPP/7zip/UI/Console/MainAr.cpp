@@ -60,7 +60,7 @@ static void PrintError(const char *message)
 
 #define NT_CHECK_FAIL_ACTION *g_StdStream << "Unsupported Windows version"; return NExitCode::kFatalError;
 
-int MY_CDECL main
+int MY_CDECL executeGenericCommandMain
 (
   #ifndef _WIN32
   int numArgs, char *args[]

@@ -4,7 +4,7 @@ ext {
     configuration = [
         'compileSdk': 27,
         'targetSdk': 27,
-        'supportLibrary': '27.0.1',
+        'supportLibrary': '27.0.2',
         'buildTools': '27.0.1'
     ]
 }
